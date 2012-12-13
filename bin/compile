@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
+
+set -e
+set -o pipefail
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+COMPILE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+function indent() {
+  c='s/^/       /'
+  sed -u "$c"
+}
+
+version=1.0
+release="znc-$version"
+tgz="$release.tar.gz"
+download="http://znc.in/releases/$tgz"
+
+if [ -f $CACHE_DIR/VERSION ]; then
+  cache_version="$(cat $CACHE_DIR/VERSION)"
+fi
+if [ "$version" = "$cache_version" ]; then
+  echo "-----> Version unchanged, using cache"
+  mv $CACHE_DIR/src $BUILD_DIR/src
+else
+  if [ "$cache_version" != "" ]; then
+    echo "-----> Version changed, rebuilding from source"
+  fi
+  echo "-----> Downloading ZNC"
+  cd $BUILD_DIR
+  curl -s "$download" >$tgz
+  tar -x -z -f $tgz
+  rm $tgz
+  mv $release src
+
+  echo "-----> Configuring"
+  cd $BUILD_DIR/src
+  ./configure --prefix=$BUILD_DIR 2>&1 1>/dev/null | indent
+
+  echo "-----> Compiling"
+  make 2>&1 1>/dev/null | indent
+fi
+
+cd $BUILD_DIR/src
+echo "-----> Installing"
+make install 2>&1 1>/dev/null | indent
+
+echo "-----> Moving build artifacts to cache"
+rm -rf $CACHE_DIR/src $CACHE_DIR/VERSION
+mv $BUILD_DIR/src $CACHE_DIR
+echo -n $version >$CACHE_DIR/VERSION
+
+echo "-----> Symlinking .znc/modules"
+cd $BUILD_DIR
+mkdir -p $BUILD_DIR/.znc
+cd  $BUILD_DIR/.znc
+ln -s ../lib/znc modules
+
+echo "-----> Moving znc configuration into place"
+mkdir -p $BUILD_DIR/.znc/configs
+mv $BUILD_DIR/*.conf $BUILD_DIR/.znc/configs
+mv $BUILD_DIR/*.pem $BUILD_DIR/.znc
+
+echo "-----> Copying bin/run into place"
+cp $COMPILE_DIR/run $BUILD_DIR/bin/run

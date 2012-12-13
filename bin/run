@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+for f in $HOME/.znc/configs/*.conf; do
+  sed s/\$PORT/$PORT/ < $f > $f.new
+  cp $f.new $f
+done
+
+exec bin/znc -f
